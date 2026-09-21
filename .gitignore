@@ -1,0 +1,9 @@
+build/
+cmake-build-*/
+*.o
+*.out
+lexer.yy.c
+lexer.yy.cc
+.idea/
+.cache/
+CMakeUserPresets.json
