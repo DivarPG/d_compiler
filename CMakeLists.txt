@@ -14,11 +14,46 @@ file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
 
 FLEX_TARGET(DLexer ${LEXER_SRC} ${LEXER_OUT})
 
+# Подключаем Bison, когда появится файл грамматики.
+set(PARSER_SRC ${CMAKE_SOURCE_DIR}/src/parser/d_parser.y)
+if(EXISTS ${PARSER_SRC})
+    find_package(BISON REQUIRED)
+
+    BISON_TARGET(DParser
+            ${PARSER_SRC}
+            ${CMAKE_BINARY_DIR}/generated/d_parser.tab.cc
+            DEFINES_FILE ${CMAKE_BINARY_DIR}/generated/d_parser.tab.hh
+            COMPILE_FLAGS "-Wall -Wcounterexamples -v --report=lookahead,counterexamples"
+    )
+
+    ADD_FLEX_BISON_DEPENDENCY(DLexer DParser)
+
+    # Run diagnostics on every IDE build, even when the grammar has not changed.
+    add_custom_target(bison_diagnostics ALL
+            COMMAND ${BISON_EXECUTABLE}
+                    -Wcounterexamples
+                    -v
+                    --report=lookahead,counterexamples
+                    -o ${CMAKE_BINARY_DIR}/generated/d_parser.diagnostics.cc
+                    ${PARSER_SRC}
+            COMMENT "Checking parser conflicts with Bison"
+            VERBATIM
+    )
+endif()
+
 add_executable(d_compiler
         ${FLEX_DLexer_OUTPUTS}
+        ${BISON_DParser_OUTPUTS}
 )
 
-target_include_directories(d_compiler PRIVATE ${CMAKE_SOURCE_DIR}/src/lexer)
+if(TARGET bison_diagnostics)
+    add_dependencies(d_compiler bison_diagnostics)
+endif()
+
+target_include_directories(d_compiler PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/lexer
+        ${CMAKE_BINARY_DIR}/generated
+)
 
 # На некоторых системах libfl нужна явно (yywrap и т.п.),
 # но у нас в .l указано "%option noyywrap", так что обычно не требуется.
