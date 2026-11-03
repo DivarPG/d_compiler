@@ -78,6 +78,8 @@ stmt_list:
 stmt:
   block
   | ';'
+  | if_stmt
+  | switch_stmt
   | for_stmt
   | while_stmt
   | do_while_stmt
@@ -93,7 +95,28 @@ return_stmt: RETURN ';'
            ;
 
 /*-------------------IF-------------------*/
+if_stmt:
+    if
+    | if ELSE stmt
+    ;
 
+if:
+    IF '(' expr ')' stmt
+    ;
+
+switch_stmt:
+    SWITCH '(' expr ')' '{' case_list '}'
+    ;
+
+case_list:
+    case
+    | case_list case
+    ;
+
+case:
+    CASE expr_list ':' stmt_list_e
+    | DEFAULT ':' stmt_list_e
+    ;
 
 /*-------------------LOOPS-------------------*/
 while_stmt:
@@ -136,46 +159,46 @@ var_init:
 
 /*-------------------EXPR-------------------*/
 expr:
-  INT_LITERAL
-  | FLOAT_LITERAL
-  | CHAR_LITERAL
-  | STRING_LITERAL
-  | DOUBLE_LITERAL
-  | ID
-  | TRUE_LITERAL
-  | FALSE_LITERAL
-  | NULL_LITERAL
-  | expr '=' expr
-        | expr ADD_ASSIGN expr
-        | expr SUB_ASSIGN expr
-        | expr MUL_ASSIGN expr
-        | expr DIV_ASSIGN expr
-        | expr MOD_ASSIGN expr
-        | expr OR expr
-        | expr AND expr
-        | expr EQ expr
-        | expr NE expr
-        | expr '<' expr
-        | expr '>' expr
-        | expr LE expr
-        | expr GE expr
-        | expr '+' expr
-        | expr '-' expr
-        | expr '*' expr
-        | expr '/' expr
-        | expr '%' expr
-        | UNIMINUS expr %prec UNIMINUS
-        | NOT expr %prec NOT
-  | '[' expr_list_e ']'
-  | expr '[' expr ']'
-  | THIS
-  | SUPER
-  | '(' expr ')'
-  | expr '(' expr_list_e ')'
-  | expr '.' ID
-  | new_expr
-  | interpolated_string
-  ;
+    INT_LITERAL
+    | FLOAT_LITERAL
+    | CHAR_LITERAL
+    | STRING_LITERAL
+    | DOUBLE_LITERAL
+    | ID
+    | TRUE_LITERAL
+    | FALSE_LITERAL
+    | NULL_LITERAL
+    | expr '=' expr
+    | expr ADD_ASSIGN expr
+    | expr SUB_ASSIGN expr
+    | expr MUL_ASSIGN expr
+    | expr DIV_ASSIGN expr
+    | expr MOD_ASSIGN expr
+    | expr OR expr
+    | expr AND expr
+    | expr EQ expr
+    | expr NE expr
+    | expr '<' expr
+    | expr '>' expr
+    | expr LE expr
+    | expr GE expr
+    | expr '+' expr
+    | expr '-' expr
+    | expr '*' expr
+    | expr '/' expr
+    | expr '%' expr
+    | UNIMINUS expr %prec UNIMINUS
+    | NOT expr %prec NOT
+    | '[' expr_list_e ']'
+    | expr '[' expr ']'
+    | THIS
+    | SUPER
+    | '(' expr ')'
+    | expr '(' expr_list_e ')'
+    | expr '.' ID
+    | new_expr
+    | interpolated_string
+    ;
 
 expr_e:
   /*EMPTY*/
