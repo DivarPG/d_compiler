@@ -4,7 +4,7 @@
 %token STATIC CONST IMPORT
 %token IF ELSE SWITCH CASE DEFAULT
 %token WHILE DO FOR
-%token CONTINUE BREAK RETURN
+%token CONTINUE BREAK RETURN //continue, break нет в цикле
 %token TRY CATCH FINALLY THROW
 %token TRUE FALSE NULL
 %token NEW THIS SUPER
@@ -53,7 +53,7 @@ enum_decl:
   ENUM ID '{' enum_members_list '}'
   ;
 
-enum_members_list:
+enum_members_list: // два списка - один для соединения элементов а второй добавляет опц запятую к другому списку
   enum_member
   | enum_members_list ',' enum_member
   | enum_members_list ','
@@ -100,7 +100,7 @@ if_stmt:
     | if ELSE stmt
     ;
 
-if:
+if: //можно без этого
     IF '(' expr ')' stmt
     ;
 
@@ -124,7 +124,7 @@ while_stmt:
   ;
 
 for_stmt:
-  FOR '(' var_decl ';' expr_e ';' expr_e ')' stmt
+  FOR '(' var_decl ';' expr_e ';' expr_e ')' stmt //заменить первое выражение на опц список всех возможных
       ;
 
 do_while_stmt:
@@ -135,9 +135,27 @@ do_while_stmt:
 type:
   base_type
   | ID
-  | type '[' ']'
-  | type '[' expr ']'
+  | base_array_type
+  | type_or_expr
   ;
+
+base_array_type:
+    base_array ']'//многомерного динам массива нет
+    | base_array_type '[' expr ']'
+    ;
+
+base_array://перенести
+    base_type '['
+    ;
+
+type_or_expr://отвечает только за статические массивы а тайп уже отвечает за динамические (птм что может быть только тайпом)
+      id_array ']'
+    | type_or_expr '[' expr ']'
+    ;
+a[1][2][]
+id_array://перенести
+    ID '['
+    ;
 
 base_type:
   INT
@@ -187,10 +205,10 @@ expr:
     | expr '*' expr
     | expr '/' expr
     | expr '%' expr
-    | UNIMINUS expr %prec UNIMINUS
+    | UNIMINUS expr %prec UNIMINUS//избыточно
     | NOT expr %prec NOT
     | '[' expr_list_e ']'
-    | expr '[' expr ']'
+    | type_or_expr
     | THIS
     | SUPER
     | '(' expr ')'
@@ -255,7 +273,7 @@ class_member_list: class_member
                  | class_member_list class_member
                  ;
 
-class_member: member_decl
+class_member: member_decl // посмотреть работу вложенных visibility
             | visibility ':'
             | visibility '{' class_member_list_e '}'
             | visibility member_decl
@@ -280,7 +298,7 @@ constructor_def: THIS '(' param_list_e ')' block
 destructor_def: '~' THIS '(' ')' block
               ;
 
-static_member: STATIC var_decl ';'
+static_member: STATIC var_decl ';'//уточнить насчет перемены мест визибилити и статик
              | STATIC function_decl
              | STATIC function_def
              ;
