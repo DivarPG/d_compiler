@@ -6,6 +6,9 @@
 %x CHARACTER
 %x STRING_INTERP
 %s INTERPOLATION
+%x WYSIWYG_DOUBLE
+%x WYSIWYG_BACK
+%x HEX_STRING
 
 %{
 #include <iostream>
@@ -17,9 +20,9 @@
 #include <vector>
 #include <unordered_map>
 
-void append_utf8(std::string& s, unsigned long cp);
-bool is_valid_unicode(unsigned long cp);
-bool resolve_html_code(const std::string& name, std::string& out);
+void append_utf8(std::string& s, unsigned long ch);
+bool is_valid_unicode(unsigned long ch);
+bool resolve_html_code(const std::string& sym_name, std::string& result_str);
 
 void printIdentifier(const char* identifier);
 void printIntegerLiteral(const char* literal);
@@ -39,7 +42,7 @@ void printSyntaxToken(const char* token);
 std::string remove_underscore(const char* text);
 long long to_int(const char* text, int base = 10);
 double to_double(const char* text);
-void add_character_value();
+void add_character_value(bool in_character, bool& char_found, bool& string_with_error, int line);
 
 std::string str = "";
 std::string comment = "";
@@ -48,6 +51,7 @@ int comment_depth = 0;
 std::vector<int> interp_depth_stack;
 bool string_with_error = false;
 bool char_found = false;
+int hex_digits = 0; int hex_high = 0;
 %}
 whitespace [ \t\f\v]
 decdigits [0-9][0-9_]*
@@ -88,114 +92,217 @@ exponent [eE][+-]?[0-9][0-9_]*
     yy_pop_state();
 }
 
-"/*" { comment.clear(); comment.append(yytext); comment_depth = 1;
-       yy_push_state(ML_COMMENT);}
+"/*" {
+    comment.clear();
+    comment.append(yytext);
+    comment_depth = 1;
+    yy_push_state(ML_COMMENT);
+}
 <ML_COMMENT>"/*" {comment.append(yytext); ++comment_depth; }
-<ML_COMMENT>"*/" { comment.append(yytext); --comment_depth;
-                    if (comment_depth == 0) {std::cout <<  "[C0MMENT]: " << comment << std::endl;
-                    comment.clear();
-                    yy_pop_state();}}
+<ML_COMMENT>"*/" {
+    comment.append(yytext);
+    --comment_depth;
+    if (comment_depth == 0) {
+        std::cout <<  "[COMMENT]: " << comment << std::endl;
+        comment.clear();
+        yy_pop_state();
+    }
+}
 <ML_COMMENT>\n {comment.append(yytext); }
 <ML_COMMENT>[^*\n]+ {comment.append(yytext); }
 <ML_COMMENT>"*" {comment.append(yytext); }
-<ML_COMMENT><<EOF>> { std::cerr << "ERROR - unterminated comment\n"; return 1; }
+<ML_COMMENT><<EOF>> { std::cerr << "ERROR - unterminated /* */ comment\n"; return 1; }
 
-"/+" { comment.clear(); comment.append(yytext); comment_depth = 1;
-       yy_push_state(NESTED_COMMENT);}
-<NESTED_COMMENT>"/+" {comment.append(yytext); ++comment_depth; }
-<NESTED_COMMENT>"+/" { comment.append(yytext); --comment_depth;
-                        if (comment_depth == 0) {
-                        std::cout <<  "[COMMENT]: " << comment << std::endl;
-                        comment.clear();
-                        yy_pop_state();}}
+"/+" {
+    comment.clear();
+    comment.append(yytext);
+    comment_depth = 1;
+    yy_push_state(NESTED_COMMENT);
+}
+<NESTED_COMMENT>"/+" { comment.append(yytext); ++comment_depth; }
+<NESTED_COMMENT>"+/" {
+    comment.append(yytext);
+    --comment_depth;
+    if (comment_depth == 0) {
+        std::cout <<  "[COMMENT]: " << comment << std::endl;
+        comment.clear();
+        yy_pop_state();
+    }
+}
 <NESTED_COMMENT>\n {comment.append(yytext); }
 <NESTED_COMMENT>[^+/\n]+ {comment.append(yytext); }
 <NESTED_COMMENT>"+" {comment.append(yytext); }
 <NESTED_COMMENT>"/" {comment.append(yytext); }
-<NESTED_COMMENT><<EOF>> { std::cerr << "ERROR - unterminated nested comment\n"; return 1; }
+<NESTED_COMMENT><<EOF>> { std::cerr << "ERROR - unterminated /+ +/ comment\n"; return 1; }
 
 \" {string_with_error = false; yy_push_state(STRING); str="";}
-<STRING,STRING_INTERP,CHARACTER>\\\' { str.append(1, '\''); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\\? { str.append(1, '\?'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\0 { str.append(1, '\0'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\a { str.append(1, '\a'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\n { str.append(1, '\n'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\r { str.append(1, '\r'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\t { str.append(1, '\t'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\f { str.append(1, '\f'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\b { str.append(1, '\b'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\v { str.append(1, '\v'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\\" { str.append(1, '\"'); add_character_value();}
-<STRING,STRING_INTERP,CHARACTER>\\{2} {str.append(1, '\\'); add_character_value();}
+<STRING,STRING_INTERP,CHARACTER>\\\' { str.append(1, '\'');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\\? { str.append(1, '\?');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\0 { str.append(1, '\0');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\a { str.append(1, '\a');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\n { str.append(1, '\n');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\r { str.append(1, '\r');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\t { str.append(1, '\t');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\f { str.append(1, '\f');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\b { str.append(1, '\b');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\v { str.append(1, '\v');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\\" { str.append(1, '\"');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<STRING,STRING_INTERP,CHARACTER>\\{2} {str.append(1, '\\');
+                            add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
 
 <STRING,STRING_INTERP,CHARACTER>\\[0-7]{1,3} {
-        long v = strtol(yytext + 1, NULL, 8);
-        if (v > 0xFF) {
-            std::cerr << "ERROR - octal escape is greater than \\377: " << yytext << std::endl;;
-            string_with_error = true;
-            }
-        else {
-            str += (char)v;
-            add_character_value();
-        }
+    long v = strtol(yytext + 1, NULL, 8);
+    if (v > 0xFF) {
+        std::cerr << "ERROR - octal escape is greater than \\377: " << yytext << std::endl;;
+        string_with_error = true;
     }
+    else {
+        str += (char)v;
+        add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);
+    }
+}
 
-<STRING,STRING_INTERP,CHARACTER>\\x[0-9a-fA-F]{2} { unsigned long ch = strtoul(yytext + 2, NULL, 16); add_character_value(); str.append(1, ch); }
+<STRING,STRING_INTERP,CHARACTER>\\x[0-9a-fA-F]{2} { unsigned long ch = strtoul(yytext + 2, NULL, 16);
+                                                    add_character_value(YY_START == CHARACTER,
+                                                    char_found, string_with_error, yylineno);
+                                                    str.append(1, ch); }
 
 <STRING,STRING_INTERP,CHARACTER>\\u[0-9a-fA-F]{4} {
-        unsigned long ch = strtoul(yytext + 2, NULL, 16);
-        if (!is_valid_unicode(ch)) {
-            std::cerr << "ERROR - invalid code point: " << yytext << std::endl;
-            string_with_error = true;
-        }
-        else {
-            append_utf8(str, ch);
-            add_character_value();
-        }
-    }
+  unsigned long ch = strtoul(yytext + 2, NULL, 16);
+  if (!is_valid_unicode(ch)) {
+      std::cerr << "ERROR - invalid code point: " << yytext << std::endl;
+      string_with_error = true;
+  }
+  else {
+      append_utf8(str, ch);
+      add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);
+  }
+}
+
 <STRING,STRING_INTERP,CHARACTER>\\U[0-9a-fA-F]{8} {
-        unsigned long ch = strtoul(yytext + 2, NULL, 16);
-        if (!is_valid_unicode(ch)) {
-            std::cerr << "ERROR - invalid code point: " << yytext << std::endl;
-            string_with_error = true;
-        }
-        else {
-            append_utf8(str, ch);
-            add_character_value();
-        }
+    unsigned long ch = strtoul(yytext + 2, NULL, 16);
+    if (!is_valid_unicode(ch)) {
+        std::cerr << "ERROR - invalid code point: " << yytext << std::endl;
+        string_with_error = true;
     }
-<STRING,STRING_INTERP,CHARACTER>\\&[A-Za-z0-9]+;   {
-        std::string name(yytext + 2, yyleng - 3), out;
-        if (resolve_html_code(name, out)) {
-            if (YY_START == STRING_INTERP)
-                string_buffer += out;
-            else {
-                str += out;
-                add_character_value();
-            }
-        }
-        else {
-            std::cerr << "ERROR - unknown named entity: " << yytext << std::endl;
-            string_with_error = true; }
+    else {
+        append_utf8(str, ch);
+        add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);
     }
-<STRING,STRING_INTERP,CHARACTER>\\& { std::cerr << "ERROR - unknown named entity, expected \\&name;" << std::endl; string_with_error = true; }
+}
+
+<STRING,STRING_INTERP,CHARACTER>\\&[A-Za-z0-9]+; {
+    std::string name(yytext + 2, yyleng - 3), out;
+
+    if (resolve_html_code(name, out)) {
+        str += out;
+    } else {
+        std::cerr << yylineno
+                  << ": ERROR - unknown named entity: "
+                  << yytext << std::endl;
+        string_with_error = true;
+    }
+}
+
+<STRING,STRING_INTERP,CHARACTER>\\& {
+    std::cerr << "ERROR - unnamed character entity:" << yytext << std::endl;
+    string_with_error = true;
+}
 
 <STRING>\n {std::cerr << "ERROR - EOL in string\n" << std::endl; string_with_error = true;}
 <STRING>\\\n {}
-<STRING,CHARACTER>\\. { std::cerr << "ERROR - unknown escape sequence: " << yytext << "\n"; string_with_error = true; }
+
+<STRING,STRING_INTERP,CHARACTER>\\. {
+    std::cerr << yylineno << ": ERROR - unknown escape sequence: " << yytext << std::endl;
+    string_with_error = true;
+}
+
 <STRING>[^\n\r\\\"]+ { str.append(yytext); }
+
 <STRING>\" {
-        if(!string_with_error)
-            std::cout << "[STRING LITERAL]: " << str << std::endl;
-        yy_pop_state();
-    }
+    if(!string_with_error)
+        std::cout << "[STRING LITERAL]: " << str << std::endl;
+    yy_pop_state();
+}
 <STRING><<EOF>> {std::cerr << "ERROR - unclosed quote" << std::endl; string_with_error = true; yy_pop_state(); }
 
 \' {string_with_error = false; char_found = false; yy_push_state(CHARACTER); str="";}
-<CHARACTER>[^'\\\n\r] { str.append(yytext); add_character_value();}
-<CHARACTER>\' {if(!string_with_error) std::cout << "[CHARACTER LITERAL]: " << str << std::endl; yy_pop_state();}
-<CHARACTER>\n {std::cerr << "ERROR - EOL in character literal\n" << std::endl; string_with_error = true; yy_pop_state();}
-<CHARACTER><<EOF>> {std::cerr << "ERROR - unclosed character literal\n"; string_with_error = true; yy_pop_state();}
+<CHARACTER>[^'\\\n\r] { str.append(yytext);
+                        add_character_value(YY_START == CHARACTER, char_found, string_with_error, yylineno);}
+<CHARACTER>\' {
+    if(!string_with_error && char_found)
+        std::cout << "[CHARACTER LITERAL]: " << str << std::endl;
+    else if(!char_found)
+        std::cerr << yylineno << ": ERROR - unterminated character constant" << std::endl;
+    yy_pop_state();
+}
+<CHARACTER>\n {std::cerr << "ERROR - EOL in character literal\n" << std::endl;
+                string_with_error = true; yy_pop_state();}
+<CHARACTER><<EOF>> {std::cerr << "ERROR - unclosed character literal\n";
+                    string_with_error = true; yy_pop_state();}
+
+r\" { yy_push_state(WYSIWYG_DOUBLE); str.clear(); }
+<WYSIWYG_DOUBLE>[^\"\r\n]+ { str.append(yytext); }
+<WYSIWYG_DOUBLE>\r\n|\r|\n { str += '\n'; }
+<WYSIWYG_DOUBLE>\" {
+    std::cout << "[WYSIWYG STRING LITERAL]: " << str << std::endl;
+    yy_pop_state();
+}
+<WYSIWYG_DOUBLE><<EOF>> { std::cerr << yylineno << ": ERROR - unclosed WYSIWYG string" << std::endl; yy_pop_state(); }
+
+\` { yy_push_state(WYSIWYG_BACK); str.clear(); }
+<WYSIWYG_BACK>[^\`\r\n]+ { str.append(yytext); }
+<WYSIWYG_BACK>\r\n|\r|\n { str += '\n'; }
+<WYSIWYG_BACK>\` {
+    std::cout << "[WYSIWYG STRING LITERAL]: " << str << std::endl;
+    yy_pop_state();
+}
+<WYSIWYG_BACK><<EOF>> { std::cerr << yylineno << ": ERROR - unclosed WYSIWYG string" << std::endl; yy_pop_state(); }
+
+\` { yy_push_state(WYSIWYG_BACK); str.clear(); }
+<WYSIWYG_BACK>[^\`\r\n]+ { str.append(yytext); }
+<WYSIWYG_BACK>\r\n|\r|\n { str += '\n'; }
+<WYSIWYG_BACK>\` {
+    std::cout << "[WYSIWYG STRING LITERAL]: " << str << std::endl;
+    yy_pop_state();
+}
+<WYSIWYG_BACK><<EOF>> { std::cerr << yylineno << ": ERROR - unclosed WYSIWYG string" << std::endl; yy_pop_state(); }
+
+x\" { yy_push_state(HEX_STRING); str.clear(); string_with_error = false; hex_digits = 0; }
+<HEX_STRING>[ \t\r\n]+ { }
+<HEX_STRING>[0-9a-fA-F] {
+    int digit = (yytext[0] <= '9') ? yytext[0] - '0' : (yytext[0] | 0x20) - 'a' + 10;
+    if (hex_digits++ % 2 == 0)
+        hex_high = digit;
+    else
+        str += (char)(hex_high * 16 + digit);
+}
+<HEX_STRING>\" {
+    if (!string_with_error && hex_digits % 2 != 0) {
+        std::cerr << yylineno << ": ERROR - odd number of hex digits in hex string" << std::endl;
+        string_with_error = true;
+    }
+    if (!string_with_error)
+        std::cout << "[HEX STRING LITERAL]: " << str << std::endl;
+    yy_pop_state();
+}
+<HEX_STRING>. {
+    if (!string_with_error)
+        std::cerr << yylineno << ": ERROR - invalid character in hex string: " << yytext << std::endl;
+    string_with_error = true;
+}
+<HEX_STRING><<EOF>> { std::cerr << yylineno << ": ERROR - unclosed hex string" << std::endl; yy_pop_state(); }
 
 i\" {
     yy_push_state(STRING_INTERP);
@@ -262,29 +369,13 @@ i\" {
 }
 
 "bool" { printTypeDefinitionKeyword(yytext); }
-"byte" { printTypeDefinitionKeyword(yytext); }
-"ubyte" { printTypeDefinitionKeyword(yytext); }
 "short" { printTypeDefinitionKeyword(yytext); }
-"ushort" { printTypeDefinitionKeyword(yytext); }
 "int" { printTypeDefinitionKeyword(yytext); }
-"uint" { printTypeDefinitionKeyword(yytext); }
 "long" { printTypeDefinitionKeyword(yytext); }
-"ulong" { printTypeDefinitionKeyword(yytext); }
-"template" { printTypeDefinitionKeyword(yytext); }
-"__vector" { printTypeDefinitionKeyword(yytext); }
 
-"char" { printTypeDefinitionKeyword(yytext); }
-"wchar" { printTypeDefinitionKeyword(yytext); }
-"dchar" { printTypeDefinitionKeyword(yytext); }
-"float" { printTypeDefinitionKeyword(yytext); }
-"double" { printTypeDefinitionKeyword(yytext); }
-"real" { printTypeDefinitionKeyword(yytext); }
 "void" { printTypeDefinitionKeyword(yytext); }
 
 "class" { printTypeDefinitionKeyword(yytext); }
-"interface" { printTypeDefinitionKeyword(yytext); }
-"struct" { printTypeDefinitionKeyword(yytext); }
-"union" { printTypeDefinitionKeyword(yytext); }
 "enum" { printTypeDefinitionKeyword(yytext); }
 
 "abstract" { printModificatorKeyword(yytext); }
@@ -293,33 +384,10 @@ i\" {
 "private" { printModificatorKeyword(yytext); }
 "protected" { printModificatorKeyword(yytext); }
 "public" { printModificatorKeyword(yytext); }
-
-"deprecated" { printModificatorKeyword(yytext); }
-"extern" { printModificatorKeyword(yytext); }
-"export" { printModificatorKeyword(yytext); }
 "static" { printModificatorKeyword(yytext); }
-"synchronized" { printModificatorKeyword(yytext); }
 
 "const" { printModificatorKeyword(yytext); }
-"immutable" { printModificatorKeyword(yytext); }
-"inout" { printModificatorKeyword(yytext); }
-"shared" { printModificatorKeyword(yytext); }
-"pure" { printModificatorKeyword(yytext); }
-"nothrow" { printModificatorKeyword(yytext); }
-
-"ref" { printModificatorKeyword(yytext); }
-"scope" { printModificatorKeyword(yytext); }
-"lazy" { printModificatorKeyword(yytext); }
-"__gshared" { printModificatorKeyword(yytext); }
-
-"alias" { printTypeDefinitionKeyword(yytext); }
-"align" { printTypeDefinitionKeyword(yytext); }
-
-"delegate" { printMembersDeclarationKeyword(yytext); }
 "function" { printMembersDeclarationKeyword(yytext); }
-"module" { printMembersDeclarationKeyword(yytext); }
-"import" { printMembersDeclarationKeyword(yytext); }
-"package" { printMembersDeclarationKeyword(yytext); }
 
 "if" { printControlStructureKeyword(yytext); }
 "else" { printControlStructureKeyword(yytext); }
@@ -330,30 +398,11 @@ i\" {
 "while" { printControlStructureKeyword(yytext); }
 "do" { printControlStructureKeyword(yytext); }
 "for" { printControlStructureKeyword(yytext); }
-"foreach" { printControlStructureKeyword(yytext); }
-"foreach_reverse" { printControlStructureKeyword(yytext); }
 
 "continue" { printControlStructureKeyword(yytext); }
 "break" { printControlStructureKeyword(yytext); }
 "goto" { printControlStructureKeyword(yytext); }
 "return" { printControlStructureKeyword(yytext); }
-
-"try" { printControlStructureKeyword(yytext); }
-"catch" { printControlStructureKeyword(yytext); }
-"finally" { printControlStructureKeyword(yytext); }
-"throw" { printControlStructureKeyword(yytext); }
-
-"asm" { printControlStructureKeyword(yytext); }
-"assert" { printControlStructureKeyword(yytext); }
-"pragma" { printControlStructureKeyword(yytext); }
-"macro" { printControlStructureKeyword(yytext); }
-"mixin" { printControlStructureKeyword(yytext); }
-
-"debug" { printControlStructureKeyword(yytext); }
-"version" { printControlStructureKeyword(yytext); }
-"unittest" { printControlStructureKeyword(yytext); }
-"out" { printControlStructureKeyword(yytext); }
-"in" { printControlStructureKeyword(yytext); }
 
 "true" { printConstantKeyword(yytext); }
 "false" { printConstantKeyword(yytext); }
@@ -363,24 +412,9 @@ i\" {
 "this" { printObjectDefinitionKeyword(yytext); }
 "super" { printObjectDefinitionKeyword(yytext); }
 
-
-"cast" { printOperator(yytext); }
 "is" { printOperator(yytext); }
 "typeid" { printOperator(yytext); }
 "typeof" { printOperator(yytext); }
-
-"auto" { printContextKeyword(yytext); }
-"invariant" { printContextKeyword(yytext); }
-"with" { printContextKeyword(yytext); }
-"__FILE__" { printContextKeyword(yytext); }
-"__FILE_FULL_PATH__" { printContextKeyword(yytext); }
-"__FUNCTION__" { printContextKeyword(yytext); }
-"__LINE__" { printContextKeyword(yytext); }
-"__MODULE__" { printContextKeyword(yytext); }
-"__PRETTY_FUNCTION__" { printContextKeyword(yytext); }
-"__parameters" { printContextKeyword(yytext); }
-"__rvalue" { printContextKeyword(yytext); }
-"__traits" { printContextKeyword(yytext); }
 
 "..." { printOperator(yytext); }
 ".." { printOperator(yytext); }
@@ -470,7 +504,6 @@ i\" {
 
 %%
 
-
 int main(int argc, char **argv)
 {
     if(argc < 2)
@@ -489,12 +522,12 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void add_character_value()
+void add_character_value(bool in_character, bool& char_found, bool& string_with_error, int line)
 {
-    if (YY_START == CHARACTER) {
+    if (in_character) {
         if (char_found) {
             string_with_error = true;
-            std::cerr << yylineno << ": ERROR - char literal can contain only one symbol" << std::endl;
+            std::cerr << line << ": ERROR - char literal can contain only one symbol" << std::endl;
         }
         else
             char_found = true;
@@ -517,37 +550,41 @@ double to_double(const char* text) {
     return atof(s.c_str());
 }
 
-bool is_valid_unicode(unsigned long cp) {
-    return cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF);
+bool is_valid_unicode(unsigned long ch) {
+    return ch <= 0x10FFFF && !(ch >= 0xD800 && ch <= 0xDFFF);
 }
 
-void append_utf8(std::string& s, unsigned long cp) {
-    if (cp < 0x80) {
-        s += (char)cp;
-    } else if (cp < 0x800) {
-        s += (char)(0xC0 | (cp >> 6));
-        s += (char)(0x80 | (cp & 0x3F));
-    } else if (cp < 0x10000) {
-        s += (char)(0xE0 | (cp >> 12));
-        s += (char)(0x80 | ((cp >> 6) & 0x3F));
-        s += (char)(0x80 | (cp & 0x3F));
+void append_utf8(std::string& str, unsigned long ch) {
+    if (ch < 0x80) {
+        str += (char)ch;
+    } else if (ch < 0x800) {
+        str += (char)(0xC0 | (ch >> 6));
+        str += (char)(0x80 | (ch & 0x3F));
+    } else if (ch < 0x10000) {
+        str += (char)(0xE0 | (ch >> 12));
+        str += (char)(0x80 | ((ch >> 6) & 0x3F));
+        str += (char)(0x80 | (ch & 0x3F));
     } else {
-        s += (char)(0xF0 | (cp >> 18));
-        s += (char)(0x80 | ((cp >> 12) & 0x3F));
-        s += (char)(0x80 | ((cp >> 6) & 0x3F));
-        s += (char)(0x80 | (cp & 0x3F));
+        str += (char)(0xF0 | (ch >> 18));
+        str += (char)(0x80 | ((ch >> 12) & 0x3F));
+        str += (char)(0x80 | ((ch >> 6) & 0x3F));
+        str += (char)(0x80 | (ch & 0x3F));
     }
 }
 
-bool resolve_html_code(const std::string& name, std::string& out) {
-    static const std::unordered_map<std::string, unsigned long> table = {
-        {"euro", 0x20AC}, {"amp", '&'}, {"lt", '<'}, {"gt", '>'}, {"quot", '"'},
-        {"copy", 0xA9}, {"frac12", 0xBD}, {"alpha", 0x3B1}, {"Alpha", 0x391},
+bool resolve_html_code(const std::string& sym_name, std::string& result_str) {
+    static const std::unordered_map<std::string, unsigned long> symbols = {
+        {"euro", 0x20AC}, {"amp", '&'},
+        {"lt", '<'}, {"gt", '>'},
+        {"quot", '"'}, {"copy", 0xA9},
+        {"frac12", 0xBD}, {"alpha", 0x3B1},
+        {"Alpha", 0x391},
     };
-    auto it = table.find(name);
-    if (it == table.end()) return false;
-    out.clear();
-    append_utf8(out, it->second);
+    auto symbol = symbols.find(sym_name);
+    if (symbol == symbols.end())
+        return false;
+    result_str.clear();
+    append_utf8(result_str, symbol->second);
     return true;
 }
 
