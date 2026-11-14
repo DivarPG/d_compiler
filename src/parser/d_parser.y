@@ -1,15 +1,14 @@
-%token BOOL INT FLOAT DOUBLE VOID
+%token BOOL INT VOID
 %token CHAR STRING
 %token CLASS ENUM OVERRIDE PRIVATE PROTECTED PUBLIC
 %token STATIC CONST IMPORT
-%token IF ELSE SWITCH CASE DEFAULT
+%token IF ELSE
 %token WHILE DO FOR
-%token CONTINUE BREAK RETURN //continue, break нет в цикле
-%token TRY CATCH FINALLY THROW
+%token CONTINUE BREAK RETURN
 %token TRUE FALSE NULL
 %token NEW THIS SUPER
 
-%token INT_LITERAL FLOAT_LITERAL  DOUBLE_LITERAL
+%token INT_LITERAL
 %token STRING_LITERAL CHAR_LITERAL
 %token TRUE_LITERAL FALSE_LITERAL
 %token NULL_LITERAL
@@ -18,77 +17,78 @@
 %token ISTRING_BEGIN ISTRING_TEXT ISTRING_END
 %token INTERP_BEGIN INTERP_END
 
-%right '=' ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN
-%left OR
-%left AND
+%right '=' ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN
 %left '<' '>' LE GE EQ NE
 %left '+' '-'
-%left '*' '/' '%'
-%right UNIMINUS NOT
-%left '.' '(' '['
+%left '*' '/'
+%precedence UNIMINUS NOT
+%precedence '.' '(' '['
 
 %start program
 
 %%
 /*-------------------GLOBAL-------------------*/
 program:
-  global_decl_list
-  ;
+    global_decl_list
+    ;
 
 global_decl_list:
-  global_decl
-  | global_decl_list global_decl
-  ;
+    global_decl
+    | global_decl_list global_decl
+    ;
 
 global_decl:
-  function_decl
-  | function_def
-  | class_decl
-  | enum_decl
-  | import_decl
-  ;
+    function_decl
+    | function_def
+    | class_decl
+    | enum_decl
+    | import_decl
+    ;
 
 /*-------------------ENUM-------------------*/
 enum_decl:
-  ENUM ID '{' enum_members_list '}'
-  ;
+    ENUM ID '{' comma_enum_members_list '}'
+    ;
 
-enum_members_list: // два списка - один для соединения элементов а второй добавляет опц запятую к другому списку
-  enum_member
-  | enum_members_list ',' enum_member
-  | enum_members_list ','
-  ;
+comma_enum_members_list:
+    enum_members_list
+    | enum_members_list ','
+    ;
+
+enum_members_list:
+    enum_member
+    | enum_members_list ',' enum_member
+    ;
 
 enum_member:
-  ID
-  | ID '=' expr
-  ;
+    ID
+    | ID '=' expr
+    ;
 
 /*-------------------STMT-------------------*/
 stmt_list_e:
-  /*EMPTY*/
-  | stmt_list
-  ;
+    /*EMPTY*/
+    | stmt_list
+    ;
 
 stmt_list:
-  stmt
-  | stmt_list stmt
-  ;
+    stmt
+    | stmt_list stmt
+    ;
 
 stmt:
-  block
-  | ';'
-  | if_stmt
-  | switch_stmt
-  | for_stmt
-  | while_stmt
-  | do_while_stmt
-  | var_decl ';'
-  | expr ';'
-  | return_stmt
-  | try_stmt
-  | throw_stmt
-  ;
+    block
+    | ';'
+    | if_stmt
+    | for_stmt
+    | while_stmt
+    | do_while_stmt
+    | break_stmt
+    | continue_stmt
+    | var_decl ';'
+    | expr ';'
+    | return_stmt
+    ;
 
 return_stmt: RETURN ';'
            | RETURN expr ';'
@@ -96,92 +96,75 @@ return_stmt: RETURN ';'
 
 /*-------------------IF-------------------*/
 if_stmt:
-    if
-    | if ELSE stmt
-    ;
-
-if: //можно без этого
     IF '(' expr ')' stmt
-    ;
-
-switch_stmt:
-    SWITCH '(' expr ')' '{' case_list '}'
-    ;
-
-case_list:
-    case
-    | case_list case
-    ;
-
-case:
-    CASE expr_list ':' stmt_list_e
-    | DEFAULT ':' stmt_list_e
+    | IF '(' expr ')' stmt ELSE stmt
     ;
 
 /*-------------------LOOPS-------------------*/
 while_stmt:
-  WHILE '(' expr ')' stmt
-  ;
+    WHILE '(' expr ')' stmt
+    ;
 
 for_stmt:
-  FOR '(' var_decl ';' expr_e ';' expr_e ')' stmt //заменить первое выражение на опц список всех возможных
-      ;
+    FOR '(' for_init_e ';' expr_e ';' expr_e ')' stmt
+    ;
+
+for_init_e:
+    /*EMPTY*/
+    | var_decl
+    | expr
+    ;
 
 do_while_stmt:
-  DO stmt WHILE '(' expr ')' ';'
-  ;
+    DO stmt WHILE '(' expr ')' ';'
+    ;
+
+continue_stmt:
+    CONTINUE ';'
+    ;
+
+break_stmt:
+    BREAK ';'
+    ;
 
 /*-------------------TYPE-------------------*/
 type:
-  base_type
-  | ID
-  | base_array_type
-  | type_or_expr
-  ;
-
-base_array_type:
-    base_array ']'//многомерного динам массива нет
-    | base_array_type '[' expr ']'
+    base_type
+    | ID
+    | base_array_type
+    | type_or_expr
     ;
 
-base_array://перенести
-    base_type '['
+base_array_type:
+    base_type '[' ']'
+    | ID '[' ']'
+    | base_array_type '[' expr ']'
+    | base_array_type '[' ']'
+    | type_or_expr '[' ']'
     ;
 
 type_or_expr://отвечает только за статические массивы а тайп уже отвечает за динамические (птм что может быть только тайпом)
-      id_array ']'
+      ID '[' expr ']'
     | type_or_expr '[' expr ']'
-    ;
-a[1][2][]
-id_array://перенести
-    ID '['
     ;
 
 base_type:
-  INT
-  | FLOAT
-  | DOUBLE
-  | CHAR
-  | STRING
-  | BOOL
-  ;
+    INT
+    | CHAR
+    | STRING
+    | BOOL
+    ;
 
 var_decl:
-  type ID var_init
-  ;
-
-var_init:
-  /*EMPTY*/
-  | '=' expr
-  ;
+    type ID
+    | type ID '=' expr
+    ;
 
 /*-------------------EXPR-------------------*/
 expr:
     INT_LITERAL
-    | FLOAT_LITERAL
     | CHAR_LITERAL
     | STRING_LITERAL
-    | DOUBLE_LITERAL
     | ID
     | TRUE_LITERAL
     | FALSE_LITERAL
@@ -191,9 +174,6 @@ expr:
     | expr SUB_ASSIGN expr
     | expr MUL_ASSIGN expr
     | expr DIV_ASSIGN expr
-    | expr MOD_ASSIGN expr
-    | expr OR expr
-    | expr AND expr
     | expr EQ expr
     | expr NE expr
     | expr '<' expr
@@ -204,34 +184,38 @@ expr:
     | expr '-' expr
     | expr '*' expr
     | expr '/' expr
-    | expr '%' expr
-    | UNIMINUS expr %prec UNIMINUS//избыточно
-    | NOT expr %prec NOT
-    | '[' expr_list_e ']'
+    | '-' expr %prec UNIMINUS
+    | '!' expr %prec NOT
+    | '[' expr_list_e ']' arr_indices_list_e
     | type_or_expr
     | THIS
     | SUPER
-    | '(' expr ')'
-    | expr '(' expr_list_e ')'
-    | expr '.' ID
+    | '(' expr ')' arr_indices_list_e
+    | expr '(' expr_list_e ')' arr_indices_list_e
+    | expr '.' ID arr_indices_list_e
     | new_expr
     | interpolated_string
     ;
 
+arr_indices_list_e:
+    /*EMPTY*/
+    | arr_indices_list_e '[' expr ']'
+    ;
+
 expr_e:
-  /*EMPTY*/
-  | expr
-  ;
+    /*EMPTY*/
+    | expr
+    ;
 
 expr_list_e:
-  /*EMPTY*/
-  | expr_list
-  ;
+    /*EMPTY*/
+    | expr_list
+    ;
 
 expr_list:
-  expr
-  | expr_list ',' expr
-  ;
+    expr
+    | expr_list ',' expr
+    ;
 
 /*-------------------FUNCTION-------------------*/
 
@@ -316,28 +300,6 @@ import_decl: IMPORT module_name ';'
 module_name: ID
            | module_name '.' ID
            ;
-
-/*-------------------EXCEPTION-------------------*/
-try_stmt: TRY block catch_list
-        | TRY block catch_list_e FINALLY block
-        ;
-
-catch_list_e: /* EMPTY */
-            | catch_list
-            ;
-
-catch_list: catch_item
-          | catch_list catch_item
-          ;
-
-catch_item: CATCH '(' catch_param ')' block
-          ;
-
-catch_param: param | type
-           ;
-
-throw_stmt: THROW expr ';' // может быть expr как пример bool proceed = ready || throw new Exception("не готово"); но надо ли
-          ;
 
 /*-------------------INTERPOLATION-------------------*/
 interpolated_string: ISTRING_BEGIN interpolated_parts_e ISTRING_END
