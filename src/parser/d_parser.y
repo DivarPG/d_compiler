@@ -137,13 +137,14 @@ type:
 
 base_array_type:
     base_type '[' ']'
+    | base_type '[' expr ']'
     | ID '[' ']'
     | base_array_type '[' expr ']'
     | base_array_type '[' ']'
     | type_or_expr '[' ']'
     ;
 
-type_or_expr://отвечает только за статические массивы а тайп уже отвечает за динамические (птм что может быть только тайпом)
+type_or_expr:
       ID '[' expr ']'
     | type_or_expr '[' expr ']'
     ;
