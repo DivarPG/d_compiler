@@ -21,6 +21,7 @@
 %left '+' '-' '~'
 %left '*' '/'
 %precedence UNIMINUS NOT
+%precedence NEW_WITHOUT_ARGS
 %precedence '.' '(' '['
 
 %start program
@@ -300,7 +301,8 @@ destructor_def: '~' THIS '(' ')' block
 override_method_def: OVERRIDE function_def
                    ;
 
-new_expr: NEW ID '(' expr_list_e ')' // нужно ли реализовывать new int или new Foo
+new_expr: NEW ID %prec NEW_WITHOUT_ARGS
+        | NEW ID '(' expr_list_e ')'
         ;
 
 /*-------------------IMPORT-------------------*/
