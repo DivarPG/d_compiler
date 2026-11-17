@@ -14,12 +14,11 @@
 %token NULL_LITERAL
 %token ID
 
-%token ISTRING_BEGIN ISTRING_TEXT ISTRING_END
-%token INTERP_BEGIN INTERP_END
+%token TO_TEXT
 
 %right '=' ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN
 %left '<' '>' LE GE EQ NE
-%left '+' '-'
+%left '+' '-' '~'
 %left '*' '/'
 %precedence UNIMINUS NOT
 %precedence '.' '(' '['
@@ -195,7 +194,8 @@ expr:
     | expr '(' expr_list_e ')' arr_indices_list_e
     | expr '.' ID arr_indices_list_e
     | new_expr
-    | interpolated_string
+    | expr '~' expr
+    | TO_TEXT '(' expr ')'
     ;
 
 arr_indices_list_e:
@@ -302,19 +302,4 @@ module_name: ID
            | module_name '.' ID
            ;
 
-/*-------------------INTERPOLATION-------------------*/
-interpolated_string: ISTRING_BEGIN interpolated_parts_e ISTRING_END
-                   ;
-
-interpolated_parts_e: /* EMPTY */
-                    | interpolated_parts
-                    ;
-
-interpolated_parts: interpolated_part
-                  | interpolated_parts interpolated_part
-                  ;
-
-interpolated_part: ISTRING_TEXT
-                 | INTERP_BEGIN expr INTERP_END
-                 ;
 %%
