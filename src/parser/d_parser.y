@@ -241,7 +241,7 @@ param_list: param
 
 param: type ID
      ;
-/*-------------------CLASS-------------------*/ // нужен ли struct
+/*-------------------CLASS-------------------*/
 
 class_decl: CLASS ID base_class_e '{' class_member_list_e '}'
           ;
@@ -258,10 +258,19 @@ class_member_list: class_member
                  | class_member_list class_member
                  ;
 
-class_member: member_decl // посмотреть работу вложенных visibility
+class_member: member_decl
+            | STATIC ':'
+            | STATIC '{' class_member_list_e '}'
+            | STATIC static_member_decl
+            | STATIC visibility static_member_decl
+            | visibility STATIC static_member_decl
             | visibility ':'
             | visibility '{' class_member_list_e '}'
             | visibility member_decl
+            | STATIC visibility ':'
+            | STATIC visibility '{' class_member_list_e '}'
+            | visibility STATIC ':'
+            | visibility STATIC '{' class_member_list_e '}'
             ;
 
 member_decl : var_decl ';'
@@ -269,11 +278,16 @@ member_decl : var_decl ';'
             | function_def
             | constructor_def
             | destructor_def
-            | static_member
             | override_method_def
             ;
 
+static_member_decl: var_decl ';'
+                  | function_decl
+                  | function_def
+                  ;
+
 visibility  : PUBLIC
+            | PRIVATE
             | PROTECTED
             ;
 
@@ -283,18 +297,13 @@ constructor_def: THIS '(' param_list_e ')' block
 destructor_def: '~' THIS '(' ')' block
               ;
 
-static_member: STATIC var_decl ';'//уточнить насчет перемены мест визибилити и статик
-             | STATIC function_decl
-             | STATIC function_def
-             ;
-
 override_method_def: OVERRIDE function_def
                    ;
 
 new_expr: NEW ID '(' expr_list_e ')' // нужно ли реализовывать new int или new Foo
         ;
 
-/*-------------------IMPORT------------------- но нужно ли это для ввода вывода??*/
+/*-------------------IMPORT-------------------*/
 import_decl: IMPORT module_name ';'
            ;
 
